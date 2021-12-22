@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.9">
+  <Task Name="PlcTask" Id="{393ff0b9-1730-4c34-957b-7b90e5a2978b}">
+    <!--CycleTime in micro seconds.-->
+    <CycleTime>10000</CycleTime>
+    <Priority>20</Priority>
+    <PouCall>
+      <Name>IotFunctionsSampleB</Name>
+    </PouCall>
+    <TaskFBGuid>{3ce6d1eb-8d52-4266-a071-5c3567a44a38}</TaskFBGuid>
+    <Fb_init>{277ecde8-547f-4e6c-a274-cb6c68cd3da2}</Fb_init>
+    <Fb_exit>{21c5a0e7-5748-4aa4-9cfc-f602a4a5a3fe}</Fb_exit>
+    <CycleUpdate>{be1a3fc0-6e79-4518-a42b-3446d15a24f7}</CycleUpdate>
+    <PostCycleUpdate>{83d6ea4d-f8d1-404b-ae6c-02ef668b47fe}</PostCycleUpdate>
+  </Task>
+</TcPlcObject>

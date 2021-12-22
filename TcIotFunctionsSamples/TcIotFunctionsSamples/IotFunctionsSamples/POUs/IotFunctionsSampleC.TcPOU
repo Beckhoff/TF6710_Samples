@@ -1,0 +1,309 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.9">
+  <POU Name="IotFunctionsSampleC" Id="{e5ef0284-abed-4489-bd4e-1ad68a00d8c5}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+This sample combines singular message operations (aRead[10], aWrite[1]), synchronized read operations with requests (aRead[0..4] governed by aRequest[1])
+and synchronized read and write operation with requests (aRead[5..9] and aWrite[2] governed by aRequest[2]).
+*)
+PROGRAM IotFunctionsSampleC
+VAR
+	//IotFunctions specific FB declarations
+	fbConnector 	: FB_IotFunctions_Connector := (sAmsNetId := '127.0.0.1.1.1',nDefaultRequesttimeout := 3000,nDefaultMessageRetryInterval := 750);
+	
+	aWrite			: ARRAY[1..2] OF FB_IotFunctions_Message := [(nChannelId := 1)
+																,(nChannelId := 1)
+																];
+
+
+	aRead 			: ARRAY[0..10] OF FB_IotFunctions_Message 	:= 
+																	[(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)																	
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)																	
+																	,(nChannelId := 1)
+																	];
+																	
+	aRequest		: ARRAY[1..2] OF FB_IotFunctions_Request := [(nRequestTimeout := 10000)
+																,(nRequestTimeout := 15000)
+																];																	
+																	
+
+	
+	//sample specific variables.
+	bOnlineChange					: BOOL;
+	nOut 							: UDINT;
+	aIn  							: ARRAY[0..10] OF UDINT; // aIn
+	nIdx							: UDINT;
+	
+	//status counter for fbRead[0..10] 
+	aCountSuccessRead				: ARRAY[0..10] OF UDINT;
+	aCountSuccessReadDataAvailable	: ARRAY[0..10] OF UDINT;
+	aCountSuccessReadDataChanged	: ARRAY[0..10] OF UDINT;
+	aCountErrorRead 				: ARRAY[0..10] OF UDINT;	
+	aCountErrorTimeout 				: ARRAY[0..10] OF UDINT;
+	
+	//status counter for fbWrite
+	aCountSuccessWrite				: ARRAY[1..2] OF UDINT;
+	aCountErrorWrite 				: ARRAY[1..2] OF UDINT;
+	
+	
+	//status counter for requests
+	aCountErrorRequest 				: ARRAY[1..2] OF UDINT;
+	
+	bWrite							: BOOL;
+	bConnectorError					: BOOL;
+	
+	bReset							: BOOL;
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nOut := nOut + 1;
+
+//Mandatory call to Execute()
+fbConnector.Execute(); 
+
+//Optional way to react to ANY error having occurred during Execute.
+IF fbConnector.bError THEN
+	bConnectorError := TRUE;
+END_IF
+
+//Using the aRead[10] FB to realize a standalone read operation.
+IF NOT aRead[10].bBusy THEN
+	IF aRead[10].bError THEN
+		aCountErrorRead[10] := aCountErrorRead[10] +1 ;
+	END_IF	
+	IF aRead[10].bTimeoutOccurred THEN
+		aCountErrorTimeout[10] := aCountErrorTimeout[10] +1 ;
+	END_IF	
+	IF aRead[10].bSuccess THEN
+		//general case of success: no error occurred for this message
+		aCountSuccessRead[10] := aCountSuccessRead[10] + 1;
+		IF aRead[10].bDataAvailable THEN
+			//data was read from the target channel
+			aCountSuccessReadDataAvailable[10] := aCountSuccessReadDataAvailable[10] + 1;
+		END_IF
+		IF aRead[10].bDataChanged THEN
+			//data was read from the target channel and differs from previously contained data in associated symbol (in this case: nIn array)
+			aCountSuccessReadDataChanged[10] := aCountSuccessReadDataChanged[10] + 1;
+		END_IF
+	END_IF
+	
+	//Start new read operation.
+	aRead[10].Read(pPayload := ADR(aIN[10]),nPayloadSize := SIZEOF(aIn[10]));
+END_IF
+
+// aRequest[1] governing aRead[0..4]
+IF NOT aRequest[1].bBusy THEN
+
+	IF aRequest[1].bError THEN
+		// Will be triggered when at least one of the included message operations throws an error
+		aCountErrorRequest[1] := aCountErrorRequest[1] + 1;			
+		//Check individual read message error status [shown as a for-loop]
+		FOR nIdx := 0 TO 4 BY 1 DO
+			IF aRead[nIdx].bError THEN
+				aCountErrorRead[nIdx] := aCountErrorRead[nIdx] + 1;
+				aRead[nIdx].Acknowledge();
+			END_IF
+		END_FOR
+
+	END_IF	
+	//timeout handling (timeouts will also occur if at least one included message was not able to retrieve data from target channel prior to timeout)  
+	IF aRequest[1].bTimeoutOccurred THEN
+		// Will be triggered when at least one of the included message operations times out (RequestTimeout)
+		
+		FOR nIdx := 0 TO 4 BY 1 DO
+			IF aRead[nIdx].bTimeoutOccurred THEN
+				//this message has timed out.
+				aCountErrorTimeout[nIdx] := aCountErrorTimeout[nIdx] + 1;
+			END_IF
+		END_FOR
+	END_IF
+	
+	//Check individual read message success status [shown as a for-loop]
+	FOR nIdx := 0 TO 4 BY 1 DO
+		IF aRead[nIdx].bSuccess THEN
+			//general case of success: no error occurred for this message
+			aCountSuccessRead[nidx] := aCountSuccessRead[nidx] + 1;
+			IF aRead[nIdx].bDataAvailable THEN
+				//data was read from the target channel
+				aCountSuccessReadDataAvailable[nIdx] := aCountSuccessReadDataAvailable[nIdx] + 1;
+			END_IF
+			IF aRead[nIdx].bDataChanged THEN
+				//data was read from the target channel and differs from previously contained data in associated symbol (in this case: nIn array)
+				aCountSuccessReadDataChanged[nIdx] := aCountSuccessReadDataChanged[nIdx] + 1;
+			END_IF
+		END_IF
+	END_FOR
+	
+	// Start the new request
+	aRequest[1].Create();
+	aRequest[1].EnqueueRead(pMessageFB := ADR(aRead[0]), pPayload := ADR(aIn[0]), nPayloadSize := SIZEOF(aIn[0]));		
+	aRequest[1].EnqueueRead(pMessageFB := ADR(aRead[1]), pPayload := ADR(aIn[1]), nPayloadSize := SIZEOF(aIn[1]));
+	aRequest[1].EnqueueRead(pMessageFB := ADR(aRead[2]), pPayload := ADR(aIn[2]), nPayloadSize := SIZEOF(aIn[2]));
+	aRequest[1].EnqueueRead(pMessageFB := ADR(aRead[3]), pPayload := ADR(aIn[3]), nPayloadSize := SIZEOF(aIn[3]));
+	aRequest[1].EnqueueRead(pMessageFB := ADR(aRead[4]), pPayload := ADR(aIn[4]), nPayloadSize := SIZEOF(aIn[4]));
+	aRequest[1].Execute();
+	
+END_IF 
+
+// aRequest[2] governing aRead[5..9]
+IF NOT aRequest[2].bBusy THEN
+	IF aRequest[2].bError THEN
+		// Will be triggered when at least one of the included message operations throws an error
+		aCountErrorRequest[2] := aCountErrorRequest[2] + 1;		
+		//Check individual read message error status [shown as a for-loop]
+		FOR nIdx := 5 TO 9 BY 1 DO
+			IF aRead[nIdx].bError THEN
+				aCountErrorRead[nIdx] := aCountErrorRead[nIdx] + 1;
+				aRead[nIdx].Acknowledge();
+			END_IF
+		END_FOR
+		IF aWrite[2].bError THEN
+			aCountErrorWrite[2] := aCountErrorWrite[2] +1;
+			aWrite[2].Acknowledge();
+		END_IF
+	END_IF	
+	
+	//Timeout handling (timeouts will also occur if at least one included message was not able to retrieve data from target channel prior to timeout)  
+	IF aRequest[2].bTimeoutOccurred THEN
+		// Will be triggered when at least one of the included message operations times out (RequestTimeout)
+		FOR nIdx := 5 TO 9 BY 1 DO
+			IF aRead[nIdx].bTimeoutOccurred THEN
+				//this message has timed out.
+				aCountErrorTimeout[nIdx] := aCountErrorTimeout[nIdx] + 1;
+			END_IF
+		END_FOR
+	END_IF
+	
+	//Check individual read message success status [shown as a for-loop]
+	FOR nIdx := 5 TO 9 BY 1 DO
+		IF aRead[nIdx].bSuccess THEN
+			//general case of success: no error occurred for this message
+			aCountSuccessRead[nidx] := aCountSuccessRead[nidx] + 1;
+			IF aRead[nIdx].bDataAvailable THEN
+				//data was read from the target channel
+				aCountSuccessReadDataAvailable[nIdx] := aCountSuccessReadDataAvailable[nIdx] + 1;
+			END_IF
+			IF aRead[nIdx].bDataChanged THEN
+				//data was read from the target channel and differs from previously contained data in associated symbol (in this case: nIn array)
+				aCountSuccessReadDataChanged[nIdx] := aCountSuccessReadDataChanged[nIdx] + 1;
+			END_IF
+		END_IF
+	END_FOR
+	IF aWrite[2].bSuccess THEN
+		aCountSuccessWrite[2] 	:= aCountSuccessWrite[2] + 1;
+	END_IF
+	
+		// Start the new request
+	aRequest[2].Create();
+	aRequest[2].EnqueueRead(pMessageFB := ADR(aRead[5]), pPayload := ADR(aIn[5]), nPayloadSize := SIZEOF(aIn[5]));		
+	aRequest[2].EnqueueRead(pMessageFB := ADR(aRead[6]), pPayload := ADR(aIn[6]), nPayloadSize := SIZEOF(aIn[6]));
+	aRequest[2].EnqueueRead(pMessageFB := ADR(aRead[7]), pPayload := ADR(aIn[7]), nPayloadSize := SIZEOF(aIn[7]));
+	aRequest[2].EnqueueRead(pMessageFB := ADR(aRead[8]), pPayload := ADR(aIn[8]), nPayloadSize := SIZEOF(aIn[8]));
+	aRequest[2].EnqueueRead(pMessageFB := ADR(aRead[9]), pPayload := ADR(aIn[9]), nPayloadSize := SIZEOF(aIn[9]));
+	aRequest[2].EnqueueWrite(pMessageFB := ADR(aWrite[2]), pPayload := ADR(nOut), nPayloadSize := SIZEOF(nOut));
+	aRequest[2].Execute();
+	
+END_IF
+
+//data source - this can be any external data source that writes to the configured channel
+//for the purpose of this sample, setting the bWrite flag of the sample code to true will result in a single write operation to the specified channel.
+
+// attempt to start a write operation every 100th cycle.
+IF nOut MOD 100 = 0 THEN
+	bWrite := true;
+END_IF
+
+IF NOT aWrite[1].bBusy THEN
+	IF aWrite[1].bError THEN
+		aCountErrorWrite[1] := aCountErrorWrite[1] + 1;
+		aWrite[1].Acknowledge();
+	ELSIF aWrite[1].bSuccess THEN
+		aCountSuccessWrite[1] := aCountSuccessWrite[1] + 1;
+		aWrite[1].Acknowledge();
+	END_IF
+	IF bWrite THEN
+		aWrite[1].Write(ADR(nOut),SIZEOF(nOut));
+		bWrite := FALSE;	
+	END_IF
+END_IF
+
+
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="IotFunctionsSampleC">
+      <LineId Id="69" Count="0" />
+      <LineId Id="348" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="154" Count="2" />
+      <LineId Id="346" Count="0" />
+      <LineId Id="235" Count="1" />
+      <LineId Id="242" Count="0" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="243" Count="0" />
+      <LineId Id="258" Count="1" />
+      <LineId Id="257" Count="0" />
+      <LineId Id="246" Count="10" />
+      <LineId Id="241" Count="0" />
+      <LineId Id="345" Count="0" />
+      <LineId Id="443" Count="0" />
+      <LineId Id="237" Count="1" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="72" Count="9" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="82" Count="1" />
+      <LineId Id="87" Count="5" />
+      <LineId Id="260" Count="1" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="265" Count="0" />
+      <LineId Id="264" Count="0" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="93" Count="27" />
+      <LineId Id="400" Count="0" />
+      <LineId Id="349" Count="0" />
+      <LineId Id="351" Count="10" />
+      <LineId Id="408" Count="2" />
+      <LineId Id="407" Count="0" />
+      <LineId Id="362" Count="0" />
+      <LineId Id="472" Count="0" />
+      <LineId Id="363" Count="2" />
+      <LineId Id="367" Count="0" />
+      <LineId Id="401" Count="2" />
+      <LineId Id="371" Count="2" />
+      <LineId Id="473" Count="0" />
+      <LineId Id="374" Count="14" />
+      <LineId Id="417" Count="1" />
+      <LineId Id="414" Count="0" />
+      <LineId Id="389" Count="10" />
+      <LineId Id="350" Count="0" />
+      <LineId Id="149" Count="1" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="442" Count="0" />
+      <LineId Id="441" Count="0" />
+      <LineId Id="438" Count="1" />
+      <LineId Id="437" Count="0" />
+      <LineId Id="440" Count="0" />
+      <LineId Id="424" Count="0" />
+      <LineId Id="429" Count="5" />
+      <LineId Id="428" Count="0" />
+      <LineId Id="425" Count="1" />
+      <LineId Id="436" Count="0" />
+      <LineId Id="427" Count="0" />
+      <LineId Id="422" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="130" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

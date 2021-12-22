@@ -1,0 +1,154 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.9">
+  <POU Name="IotFunctionsSampleB" Id="{9d254a41-d71f-4a58-9c69-f58185d582d8}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+This sample utilizes a request (fbRequest) to synchronize multiple read operations (aRead[0..4])
+*)
+PROGRAM IotFunctionsSampleB
+VAR
+	//IotFunctions specific FB declarations
+	fbConnector 	: FB_IotFunctions_Connector := (sAmsNetId := '127.0.0.1.1.1',nDefaultRequesttimeout := 3000,nDefaultMessageRetryInterval := 750);
+	fbWrite      	: FB_IotFunctions_Message 	:= (nChannelId := 1);
+	aRead 			: ARRAY[0..4] OF FB_IotFunctions_Message 	:= 
+																	[(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	,(nChannelId := 1)
+																	];
+	fbRequest		: FB_IotFunctions_Request := (nRequestTimeout := 10000);
+	
+	//sample specific variables.
+	nOut 							: UDINT;
+	aIn  							: ARRAY[0..4] OF UDINT; // aIn
+	nIdx							: UDINT;
+	
+	aCountSuccessRead				: ARRAY[0..4] OF UDINT;
+	aCountSuccessReadDataAvailable	: ARRAY[0..4] OF UDINT;
+	aCountSuccessReadDataChanged	: ARRAY[0..4] OF UDINT;
+	nCountSuccessWrite				: UDINT;
+	
+	aCountErrorRead 				: ARRAY[0..4] OF UDINT;	
+	nCountErrorWrite 				: UDINT;
+
+	nCountErrorRequest 				: UDINT;
+	nCountErrorTimeout 				: UDINT;
+	bWrite							: BOOL;
+	
+	bConnectorError					: BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nOut := nOut + 1;
+
+
+
+
+// Mandatory call to Execute()
+fbConnector.Execute(); 
+
+//Optional way to react to ANY error having occurred during Execute.
+IF fbConnector.bError THEN
+	bConnectorError := TRUE;
+END_IF
+
+IF NOT fbRequest.bBusy THEN
+	//error handling
+	IF fbRequest.bError THEN
+		// Will be triggered when at least one of the included message operations throws an error
+		nCountErrorRequest := nCountErrorRequest + 1;		
+		//Check individual read message error status [shown as a for-loop]
+		FOR nIdx := 0 TO 4 BY 1 DO
+			IF aRead[nidx].bError THEN
+				aCountErrorRead[nidx] := aCountErrorRead[nidx] + 1;
+				aRead[nIdx].Acknowledge();
+			END_IF
+		END_FOR
+		//check fbWrite error status.
+		IF fbWrite.bError THEN
+			nCountErrorWrite := nCountErrorWrite +1;
+			fbWrite.Acknowledge();
+		END_IF
+	END_IF	
+	//timeout handling (timeouts will also occur if at least one included message was not able to retrieve data from target channel prior to timeout)  
+	IF fbRequest.bTimeoutOccurred THEN
+		// Will be triggered when at least one of the included message operations times out (RequestTimeout)
+		nCountErrorTimeout := nCountErrorTimeout + 1;
+	END_IF
+	
+	//Check individual read message success status [shown as a for-loop]
+	FOR nIdx := 0 TO 4 BY 1 DO
+		IF aRead[nIdx].bSuccess THEN
+			//general case of success: no error occurred for this message
+			aCountSuccessRead[nidx] := aCountSuccessRead[nidx] + 1;
+			IF aRead[nIdx].bDataAvailable THEN
+				//data was read from the target channel
+				aCountSuccessReadDataAvailable[nIdx] := aCountSuccessReadDataAvailable[nIdx] + 1;
+			END_IF
+			IF aRead[nIdx].bDataChanged THEN
+				//data was read from the target channel and differs from previously contained data in associated symbol (in this case: nIn array)
+				aCountSuccessReadDataChanged[nIdx] := aCountSuccessReadDataChanged[nIdx] + 1;
+			END_IF
+		END_IF
+	END_FOR
+	
+	// Start the new request
+	fbRequest.Create();
+	fbRequest.EnqueueRead(pMessageFB := ADR(aRead[0]), pPayload := ADR(aIn[0]), nPayloadSize := SIZEOF(aIn[0]));		
+	fbRequest.EnqueueRead(pMessageFB := ADR(aRead[1]), pPayload := ADR(aIn[1]), nPayloadSize := SIZEOF(aIn[1]));
+	fbRequest.EnqueueRead(pMessageFB := ADR(aRead[2]), pPayload := ADR(aIn[2]), nPayloadSize := SIZEOF(aIn[2]));
+	fbRequest.EnqueueRead(pMessageFB := ADR(aRead[3]), pPayload := ADR(aIn[3]), nPayloadSize := SIZEOF(aIn[3]));
+	fbRequest.EnqueueRead(pMessageFB := ADR(aRead[4]), pPayload := ADR(aIn[4]), nPayloadSize := SIZEOF(aIn[4]));
+	fbRequest.Execute();
+	
+END_IF 
+
+//data source - this can be any external data source that writes to the configured channel
+//for the purpose of this sample, setting the bWrite flag of the sample code to true will result in a single write operation to the specified channel.
+IF NOT fbwrite.bBusy THEN
+	IF fbWrite.bError THEN
+		nCountErrorWrite 	:= nCountErrorWrite + 1;
+	ELSIF fbWrite.bSuccess THEN
+		nCountSuccessWrite 	:= nCountSuccessWrite + 1;
+	END_IF
+	fbwrite.Acknowledge();
+	IF bWrite THEN
+		fbwrite.Write(ADR(nOut),SIZEOF(nOut));
+		
+		bWrite := FALSE;
+	END_IF
+END_IF
+
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="IotFunctionsSampleB">
+      <LineId Id="69" Count="0" />
+      <LineId Id="251" Count="0" />
+      <LineId Id="254" Count="0" />
+      <LineId Id="250" Count="0" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="154" Count="2" />
+      <LineId Id="72" Count="9" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="82" Count="4" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="87" Count="33" />
+      <LineId Id="149" Count="1" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="196" Count="5" />
+      <LineId Id="248" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="206" Count="1" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="130" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

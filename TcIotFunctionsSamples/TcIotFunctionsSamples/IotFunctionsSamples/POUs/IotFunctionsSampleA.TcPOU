@@ -1,0 +1,95 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.9">
+  <POU Name="IotFunctionsSampleA" Id="{4c5b4703-eee4-46df-9b16-ca1cc2b45e04}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+This sample utilizes two message FBs to realize a read operation (fbRead) and a write operation (fbWrite).
+*)
+PROGRAM IotFunctionsSampleA
+VAR
+	//creates a FB_IotFunctions_Connector for the Data Agent instance running at the specified sAmsNetId. 
+	//(if Data Agent and IotFunctions runtime are on the same machine, the default (127.0.0.1.1.1) will suffice.
+	fbConnector : FB_IotFunctions_Connector := (sAmsNetId := '127.0.0.1.1.1');
+	//creates a FB_IotFunctions_Message FB intended to be used to read from channel with Id 2. This message will use a timeout of 3s and retry interval of 1s.
+	fbRead		: FB_IotFunctions_Message := (nChannelId :=1, nMessageRetryInterval := 1000, nRequestTimeout := 3000);	
+	//creates a FB_IotFunctions_Message FB intended to be used to write to channel with Id 2. 10s timeout, 1s retry interval. 
+	fbWrite		: FB_IotFunctions_Message := (nChannelId :=1, nMessageRetryInterval := 1000, nRequestTimeout := 10000);
+
+	//sample specific declarations.	
+	nIn  				: UDINT := 0;
+	nOut 				: UDINT := 1;
+	nCountReadData 		: UDINT := 0;
+	nCountWriteError 	: UDINT := 0;	
+	nCountReadError 	: UDINT := 0;
+	bWrite 				: BOOL;
+	bConnectorError 	: BOOL;
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nOut := nOut + 1 ;
+fbConnector.Execute();
+
+//optional way to react to ANY error having occurred during Execute.
+IF fbConnector.bError THEN
+	bConnectorError := TRUE;
+END_IF
+
+//error handling
+IF fbConnector.bError THEN
+	IF fbRead.bError THEN
+		nCountReadError := nCountReadError + 1;
+		fbRead.Acknowledge();
+	END_IF
+	IF fbWrite.bError THEN
+		nCountWriteError := nCountWriteError + 1;
+		fbWrite.Acknowledge();
+	END_IF
+END_IF
+
+
+IF fbRead.bDataAvailable THEN
+	//handle data that has been read from target channel.
+	nCountReadData := nCountReadData +1;
+END_IF
+
+//start read operation [note that invoking Read implicitly checks if the FB is busy - invoking Read on an ongoing Read operation therefore will not override the ongoig operation!]
+//if you want to abort an ongoing operation, you can invoke Reset.
+fbRead.Read(ADR(nIn),SIZEOF(nIn));
+
+//data source - this can be any external data source that writes to the configured channel
+//for the purpose of this sample, setting the bWrite flag of the sample code to true will result in a single write operation to the specified channel.
+IF bWrite THEN
+	IF NOT fbWrite.bBusy THEN
+		bWrite := FALSE;
+		fbWrite.Write(ADR(nOut),SIZEOF(nOut));		
+	END_IF
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="IotFunctionsSampleA">
+      <LineId Id="112" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="61" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="21" Count="3" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="26" Count="5" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="39" Count="5" />
+      <LineId Id="144" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>
